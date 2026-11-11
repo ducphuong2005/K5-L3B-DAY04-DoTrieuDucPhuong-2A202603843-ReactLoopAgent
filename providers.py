@@ -1,6 +1,6 @@
-"""Bốn provider cùng một interface. Không chứa agent loop."""
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
@@ -14,14 +14,22 @@ CONFIG = {
 
 def post_json(url, headers, payload):
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json', **headers})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as response:
-            return json.load(response)
-    except urllib.error.HTTPError as exc:
-        # Do not print response bodies: they may contain account or request data.
-        raise RuntimeError(f'Provider trả HTTP {exc.code}; kiểm tra model, key và quota.') from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f'Không kết nối được provider: {exc.reason}') from exc
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=90) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as exc:
+            # Do not print response bodies: they may contain account or request data.
+            if exc.code in (429, 500, 502, 503, 504) and attempt < 2:
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise RuntimeError(f'Provider trả HTTP {exc.code}; kiểm tra model, key và quota.') from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+                continue
+            reason = getattr(exc, 'reason', str(exc))
+            raise RuntimeError(f'Không kết nối được provider: {reason}') from exc
 
 
 class Provider:
@@ -37,6 +45,10 @@ class Provider:
             raise ValueError('Cần đặt MODEL là model có hỗ trợ tool calling.')
         self.name, self.model = name, model
         key_name, self.url = CONFIG[name]
+        if name == 'openai':
+            custom_base = os.getenv('OPENAI_BASE_URL', '').rstrip('/')
+            if custom_base:
+                self.url = custom_base + '/chat/completions'
         self.key = os.getenv(key_name)
         if not self.key:
             raise ValueError(f'Thiếu {key_name}; xem README.md.')

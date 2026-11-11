@@ -2,6 +2,22 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
+
+_env_file = Path(__file__).resolve().parent / '.env'
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if not _line or _line.startswith('#') or '=' not in _line:
+            continue
+        if _line.startswith('export '):
+            _line = _line[len('export '):]
+        _key, _, _val = _line.partition('=')
+        _key = _key.strip()
+        _val = _val.strip().strip('"').strip("'")
+        if _key and _key not in os.environ:
+            os.environ[_key] = _val
+
 from agent import run_agent
 from providers import Provider
 from status_tools import StatusTools
