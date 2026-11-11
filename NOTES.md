@@ -109,3 +109,14 @@ MSSV: 2A202603843
    - Cơ chế kiểm tra nguồn bằng code (`validation_missing_source`) chỉ đảm bảo URL của các incident đã tra cứu có mặt trong câu trả lời, chứ không chứng minh được mọi mệnh đề mà model viết ra đều khớp 100% với nội dung trong URL đó.
 3. **Giới hạn của việc chỉ chạy một lần mỗi phiên bản:**
    - Với `temperature` mặc định của LLM API, mỗi lần chạy chỉ là một mẫu ngẫu nhiên (sample size = 1) cho cả chiều sinh câu trả lời của Agent lẫn chiều chấm điểm của Judge. Chênh lệch điểm giữa một lần chạy `eval_before` và một lần chạy `eval_after` bị pha trộn bởi nhiễu ngẫu nhiên của model, chưa đủ ý nghĩa thống kê để kết luận về độ ổn định tuyệt đối trong môi trường production.
+
+## 6. Ghi chú Bonus (`eval_bonus.json`)
+
+- **Xử lý Retry (429) & Lỗi định dạng:**
+  - Khi gặp `RATE_LIMITED` (HTTP 429) hoặc `INVALID_ARGUMENTS`, agent nhận observation lỗi từ tool, đọc `retry_after` / thông báo lỗi và gọi lại với tham số hợp lệ (`B3: 100/100`, `B5: 85/100`).
+  - Với 429 kéo dài (`B4: 80/100`), agent dừng sau tối đa 3 lần thử, báo cáo trung thực không thể xác nhận trạng thái của Vercel (không coi 429 là outage) và vẫn trả lời đầy đủ thông tin của GitHub.
+- **Phân trang (Pagination) & Quản lý Context:**
+  - Ở `B2` (`85/100`), agent đọc `next_offset` để tiếp tục lật trang timeline của incident `sps6n39gm4sg` cho tới khi tìm thấy update ở `offset=3` nhắc tới lỗi từ upstream GitHub.
+  - Khi status tool trả về mảng `distractors` lớn (160 bản ghi nhiễu ở `B6`), agent giữ nguyên dữ liệu trong `trace` nhưng rút gọn mảng `distractors` trong message gửi cho LLM để tránh làm loãng context.
+- **Giới hạn còn lại ở bộ Bonus:**
+  - Ở `B6` , khi phải tổng hợp nhiều nhà cung cấp cùng lúc trong một câu hỏi, đôi khi model dùng thông tin tóm tắt từ status tool luôn mà bỏ qua bước gọi sâu `get_incident_details` hoặc quên retry 1 nhà cung cấp bị 429 khi 4 nhà cung cấp kia đã trả kết quả thành công.
